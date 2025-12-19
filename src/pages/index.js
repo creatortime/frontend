@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
 import { ethers } from 'ethers';
-
-// Импортируем ABI и адрес контракта
 import CreatorTokenABI from '../contracts/CreatorTokenABI.json';
 import contractAddress from '../contracts/contract-address.json';
 
@@ -11,11 +9,18 @@ export default function Home() {
   const [tokenSymbol, setTokenSymbol] = useState('');
   const [totalSupply, setTotalSupply] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
   
-  // Адрес нашего задеплоенного контракта
+  // Форма регистрации
+  const [category, setCategory] = useState('youtube');
+  const [profileId, setProfileId] = useState('');
+  
+  // Информация о создателе
+  const [creatorInfo, setCreatorInfo] = useState(null);
+  
   const contractAddr = contractAddress.CreatorToken;
+  const categories = ['youtube', 'github', 'twitter', 'twitch', 'instagram', 'tiktok', 'medium', 'art', 'music', 'writing'];
 
-  // Функция подключения кошелька
   const connectWallet = async () => {
     if (window.ethereum) {
       try {
@@ -24,6 +29,9 @@ export default function Home() {
         });
         setWalletAddress(accounts[0]);
         console.log('Connected:', accounts[0]);
+        // После подключения читаем данные и проверяем регистрацию
+        readContractData();
+        checkIfRegistered(accounts[0]);
       } catch (error) {
         console.error('Error connecting wallet:', error);
       }
@@ -32,47 +40,96 @@ export default function Home() {
     }
   };
 
-  // Функция чтения данных из контракта
   const readContractData = async () => {
     if (!walletAddress) return;
     
     setIsLoading(true);
     try {
-      // 1. Подключаемся к провайдеру MetaMask
       const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const contract = new ethers.Contract(contractAddr, CreatorTokenABI, provider);
       
-      // 2. Создаем объект контракта
-      const contract = new ethers.Contract(
-        contractAddr, 
-        CreatorTokenABI, 
-        provider
-      );
-      
-      // 3. Читаем данные из контракта
       const name = await contract.name();
       const symbol = await contract.symbol();
       const supply = await contract.totalSupply();
       
-      // 4. Преобразуем big number в читаемый формат
-      const formattedSupply = ethers.utils.formatUnits(supply, 18);
-      
-      // 5. Сохраняем данные в state
       setTokenName(name);
       setTokenSymbol(symbol);
-      setTotalSupply(formattedSupply);
-      
+      setTotalSupply(ethers.utils.formatUnits(supply, 18));
     } catch (error) {
       console.error('Error reading contract:', error);
-      alert('Error reading contract. Make sure you have the right network!');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Когда кошелек подключается, читаем данные
+  // Проверяем, зарегистрирован ли пользователь
+  const checkIfRegistered = async (address) => {
+    if (!address) return;
+    
+    try {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const contract = new ethers.Contract(contractAddr, CreatorTokenABI, provider);
+      
+      const info = await contract.creators(address);
+      
+      if (info.isActive) {
+        setCreatorInfo({
+          category: info.category,
+          profileId: info.profileId,
+          reputation: info.reputation.toString(),
+          totalEarned: ethers.utils.formatUnits(info.totalEarned, 18)
+        });
+      } else {
+        setCreatorInfo(null);
+      }
+    } catch (error) {
+      console.error('Error checking registration:', error);
+    }
+  };
+
+  // Регистрация создателя
+  const registerCreator = async () => {
+    if (!walletAddress) {
+      alert('Please connect wallet first!');
+      return;
+    }
+    
+    if (!category || !profileId) {
+      alert('Please fill all fields');
+      return;
+    }
+    
+    setIsRegistering(true);
+    try {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const contract = new ethers.Contract(contractAddr, CreatorTokenABI, signer);
+      
+      // Отправляем транзакцию
+      const tx = await contract.registerCreator(category, profileId);
+      console.log('Transaction sent:', tx.hash);
+      
+      // Ждем подтверждения
+      await tx.wait();
+      console.log('Transaction confirmed!');
+      
+      alert('🎉 Successfully registered as creator!');
+      
+      // Обновляем информацию
+      checkIfRegistered(walletAddress);
+      
+    } catch (error) {
+      console.error('Error registering:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setIsRegistering(false);
+    }
+  };
+
   useEffect(() => {
     if (walletAddress) {
       readContractData();
+      checkIfRegistered(walletAddress);
     }
   }, [walletAddress]);
 
@@ -148,22 +205,153 @@ export default function Home() {
               </div>
             </div>
           )}
+        </div>
+      )}
+      
+      {/* Форма регистрации */}
+      {walletAddress && !creatorInfo && (
+        <div style={{ 
+          marginTop: 40, 
+          padding: 25, 
+          background: '#fef3c7', 
+          borderRadius: 12,
+          border: '1px solid #f59e0b'
+        }}>
+          <h2 style={{ color: '#92400e' }}>🚀 Register as Creator</h2>
           
-          <button 
-            onClick={readContractData}
-            disabled={isLoading}
-            style={{ 
-              background: '#8b5cf6', 
-              color: 'white', 
-              padding: '10px 20px', 
-              border: 'none', 
+          <div style={{ marginTop: 20 }}>
+            <div style={{ marginBottom: 15 }}>
+              <label style={{ display: 'block', marginBottom: 5, fontWeight: 'bold' }}>
+                Category:
+              </label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  borderRadius: '6px',
+                  border: '1px solid #d1d5db'
+                }}
+              >
+                {categories.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div style={{ marginBottom: 15 }}>
+              <label style={{ display: 'block', marginBottom: 5, fontWeight: 'bold' }}>
+                Profile ID / Username:
+              </label>
+              <input
+                type="text"
+                value={profileId}
+                onChange={(e) => setProfileId(e.target.value)}
+                placeholder="your_username"
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  borderRadius: '6px',
+                  border: '1px solid #d1d5db'
+                }}
+              />
+            </div>
+            
+            <button
+              onClick={registerCreator}
+              disabled={isRegistering || !profileId}
+              style={{
+                background: '#f59e0b',
+                color: 'white',
+                padding: '12px 24px',
+                border: 'none',
+                borderRadius: '6px',
+                width: '100%',
+                fontSize: '16px',
+                cursor: isRegistering ? 'not-allowed' : 'pointer',
+                opacity: (!profileId || isRegistering) ? 0.7 : 1
+              }}
+            >
+              {isRegistering ? 'Registering...' : 'Register as Creator'}
+            </button>
+            
+            <p style={{ marginTop: 10, fontSize: '14px', color: '#92400e' }}>
+              ⚡ Registration is free! After registration you can claim daily CTK tokens.
+            </p>
+          </div>
+        </div>
+      )}
+      
+      {/* Информация о создателе (если зарегистрирован) */}
+      {walletAddress && creatorInfo && (
+        <div style={{ 
+          marginTop: 40, 
+          padding: 25, 
+          background: '#d1fae5', 
+          borderRadius: 12,
+          border: '1px solid #10b981'
+        }}>
+          <h2 style={{ color: '#065f46' }}>✅ Registered Creator</h2>
+          
+          <div style={{ marginTop: 20 }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between',
+              padding: '10px 0',
+              borderBottom: '1px solid #10b981'
+            }}>
+              <span style={{ fontWeight: 'bold' }}>Category:</span>
+              <span style={{ textTransform: 'capitalize' }}>{creatorInfo.category}</span>
+            </div>
+            
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between',
+              padding: '10px 0',
+              borderBottom: '1px solid #10b981'
+            }}>
+              <span style={{ fontWeight: 'bold' }}>Profile ID:</span>
+              <span>@{creatorInfo.profileId}</span>
+            </div>
+            
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between',
+              padding: '10px 0',
+              borderBottom: '1px solid #10b981'
+            }}>
+              <span style={{ fontWeight: 'bold' }}>Reputation:</span>
+              <span>{creatorInfo.reputation} points</span>
+            </div>
+            
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between',
+              padding: '10px 0'
+            }}>
+              <span style={{ fontWeight: 'bold' }}>Total Earned:</span>
+              <span>{creatorInfo.totalEarned} CTK</span>
+            </div>
+          </div>
+          
+          <button
+            onClick={() => alert('Claim function coming soon!')}
+            style={{
+              background: '#10b981',
+              color: 'white',
+              padding: '12px 24px',
+              border: 'none',
               borderRadius: '6px',
-              marginTop: '20px',
-              cursor: isLoading ? 'not-allowed' : 'pointer',
-              opacity: isLoading ? 0.7 : 1
+              width: '100%',
+              fontSize: '16px',
+              cursor: 'pointer',
+              marginTop: '20px'
             }}
           >
-            {isLoading ? 'Loading...' : 'Refresh Data'}
+            🎁 Claim Daily CTK (Coming Soon)
           </button>
         </div>
       )}
@@ -176,20 +364,15 @@ export default function Home() {
         borderRadius: 8,
         border: '1px solid #bae6fd'
       }}>
-        <h3>📋 How to Test:</h3>
+        <h3>📋 How to Test Registration:</h3>
         <ol style={{ lineHeight: '1.8' }}>
-          <li>Install <a href="https://metamask.io/" target="_blank">MetaMask</a> browser extension</li>
-          <li>Click "Connect Wallet" button above</li>
-          <li>Add Hardhat network to MetaMask:
-            <ul style={{ marginLeft: 20, marginTop: 5 }}>
-              <li><strong>Network Name:</strong> Hardhat Local</li>
-              <li><strong>RPC URL:</strong> http://127.0.0.1:8545</li>
-              <li><strong>Chain ID:</strong> 31337</li>
-              <li><strong>Currency Symbol:</strong> ETH</li>
-            </ul>
-          </li>
-          <li>Import test account from Hardhat terminal (private key)</li>
-          <li>See token data loaded from blockchain!</li>
+          <li>Connect wallet with MetaMask</li>
+          <li>Select your category (YouTube, GitHub, etc.)</li>
+          <li>Enter your profile username</li>
+          <li>Click "Register as Creator"</li>
+          <li>Confirm transaction in MetaMask</li>
+          <li>Wait for confirmation (few seconds)</li>
+          <li>See your creator status update!</li>
         </ol>
       </div>
     </div>

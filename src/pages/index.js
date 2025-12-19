@@ -28,7 +28,7 @@ export default function Home() {
 
   // 2. Чтение данных контракта
   const fetchTokenData = async () => {
-    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    const provider = new ethers.BrowserProvider(window.ethereum);
     const contract = new ethers.Contract(CONTRACT_ADDRESS, CreatorTokenABI, provider);
     const name = await contract.name();
     const symbol = await contract.symbol();
@@ -38,7 +38,7 @@ export default function Home() {
 
   // 3. Регистрация создателя (упрощенно)
   const registerCreator = async () => {
-    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = provider.getSigner();
     const contract = new ethers.Contract(CONTRACT_ADDRESS, CreatorTokenABI, signer);
     try {
